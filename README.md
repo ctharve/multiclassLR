@@ -10,7 +10,7 @@ To install from within an R session:
 
 ```R
 require(devtools)
-install_github('piquelab/multiclassLR')
+install_github('ctharve/multiclassLR')
 library('multiclassLR')
 ```
 
