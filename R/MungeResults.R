@@ -3,11 +3,13 @@
 
 MungeResults <-
 function(optobj, parmnames, classes, sig=0.05){
+  require(MASS)
   n.c <- classes-1
   n.p <- length(parmnames)/n.c
 
   parms <- optobj$par
-  parms.se <- diag(solve(optobj$hessian))^(.5)
+  #parms.se <- diag(solve(optobj$hessian))^(.5)
+  parms.se <- diag(ginv(optobj$hessian))^(.5)
   parms.z <- parms * parms.se^(-1)
   parms.pval <- 2*pnorm(-abs(parms.z))
   betas <- exp(parms)
