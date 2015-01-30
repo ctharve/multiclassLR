@@ -1,3 +1,4 @@
+## given a design matrix & class counts, returns a vector of zero weights
 InitialWeights <- function(design.mat, n.classes)
 {
   n.params.ni <- dim(design.mat)[2]
@@ -5,14 +6,16 @@ InitialWeights <- function(design.mat, n.classes)
   initweights.ni
 }
 
+## given a design matrix & class labels, returns a vector of complete variable names
 VarNames <- function(design.mat, configurations)
 {
   indvars <- colnames(design.mat)
+  if(is.null(indvars)){stop("design matrix must have column names")}
   var.names <- matrix(sapply(configurations, function(config){t(paste0(indvars, config))}), ncol=1)[, 1]
   var.names
 }
  
-
+## multinomial data will be transformed for ggplot2
 CreatePlotDat <- function(multiDat)
 {
   if(!("results" %in% names(multiDat))){stop("\"results\" absent from input data")}
@@ -27,36 +30,39 @@ CreatePlotDat <- function(multiDat)
   plot_dat
 }
 
-###############################
-## 1.5.) update functions to accept intercepts fit individually
-###############################
+## log-likelihood closure, bundling the intercept & number of classes into a likelihood function
+## for optim
+MultiNegLlk.ni <- function(intercepts, n.classes)
+{  
+  MyMultiNegLlk <- function(w, X, Y)
+  {
+    # add an intercept term & intercept weights  
+    X.int <- cbind(rep(1, dim(X)[1]), X)
+    #w.int <- c(intercepts[1], w[1:37], intercepts[2], w[38:74], intercepts[3], w[75:111])
+    parm.classes <- n.classes-1
+    n.all.parms <- length(w)
+    if((n.all.parms %% parm.classes) != 0){stop("parms vector length is not a multiple of n.classes-1")}
+    n.parms <- n.all.parms / parm.classes
+    w.int <- c(intercepts[1], w[1:n.parms], intercepts[2], w[(n.parms+1):(2*n.parms)], intercepts[3], w[(2*n.parms+1):(3*n.parms)])
 
-MultiNegLlk.ni <- function(intercepts){
-  
-  MyMultiNegLlk <- function(w, X, Y){
-
-  # add an intercept term & intercept weights  
-  X.int <- cbind(rep(1, dim(X)[1]), X)
-  ## TODO: classes=3 is hardcoded, and we need to change that
-  #w.int <- c(intercepts[1], w[1:37], intercepts[2], w[38:74], intercepts[3], w[75:111])
-  ## this is so bad and needs to be fixed, pronto
-  w.int <- c(intercepts[1], w[1:36], intercepts[2], w[37:72], intercepts[3], w[73:108])
-
-  Y_hat <- YHatMulti(w.int, X.int)  
-  llk <- sum(diag(t(Y) %*% log(Y_hat)))  # trace is invariant to cyclic permutations
-  -llk
+    Y_hat <- YHatMulti(w.int, X.int)  
+    llk <- sum(diag(t(Y) %*% log(Y_hat)))  # trace is invariant to cyclic permutations
+    -llk
   }  
   MyMultiNegLlk
 }
 
+## optimization for a multinomial model. intercept fit from an independent
+## run, avoiding the use of a baseline class
 MyMultinomial.ni <- function(intercepts, parms, X, Y, var.names, hessian=TRUE, maxit=1E5)
 {
   ## check argument validity ##
   ## TODO ##
+  n.classes <- dim(Y)[2]
   cat('=== parameters are valid ===', '\n\n')
 
   ## create gradient closure with intercepts
-  MyMultiNegLlk <- MultiNegLlk.ni(intercepts)
+  MyMultiNegLlk <- MultiNegLlk.ni(intercepts, n.classes)
   
   ## model fitting
   cat('=== begin optimization ===', '\n\n')
@@ -70,24 +76,8 @@ MyMultinomial.ni <- function(intercepts, parms, X, Y, var.names, hessian=TRUE, m
   nllk <- model$value 
   converged <- model$convergence
   hessian <- model$hessian
-  model_res <- MungeResults(model, var.names, classes=4)
+  model_res <- MungeResults(model, var.names, classes=n.classes)
 
   retval <- list(nllk=nllk, converged=converged, hessian=hessian, results=model_res)
   retval
-}
-
-YHatMulti <- function (w, X, baseline = TRUE) 
-{
-    p <- dim(X)[2]
-    #cat('parm vect length: ', length(w), '\n')
-    #cat('design features: ', p, '\n')
-    W <- matrix(w, nrow = p)
-    class_inner_prod <- exp(X %*% W)
-    denom <- (1 + rowSums(class_inner_prod))^-1
-    if (baseline) {
-        cbind(class_inner_prod * denom, denom)
-    }
-    else {
-        class_inner_prod * denom
-    }
 }
