@@ -32,9 +32,9 @@ CreatePlotDat <- function(multiDat)
 
 ## log-likelihood closure, bundling the intercept & number of classes into a likelihood function
 ## for optim
-MultiNegLlk.ni <- function(intercepts, n.classes)
+MultiNegLlk.ni <- function(Y, X, intercepts, n.classes)
 {  
-  MyMultiNegLlk <- function(w, X, Y)
+  MyMultiNegLlk <- function(w)
   {
     # add an intercept term & intercept weights  
     X.int <- cbind(rep(1, dim(X)[1]), X)
