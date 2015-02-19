@@ -16,13 +16,19 @@ VarNames <- function(design.mat, configurations)
 }
  
 ## multinomial data will be transformed for ggplot2
-CreatePlotDat <- function(multiDat)
+CreatePlotDat <- function(multiDat, sig.parms=FALSE)
 {
   if(!("results" %in% names(multiDat))){stop("\"results\" absent from input data")}
   if(!("dat.all" %in% names(multiDat$results))){stop("\"dat.all\" absent from results data")}
+
+  if(sig.parms==TRUE){
+    dat <- multiDat$results$dat.sig
+  } else {
+    dat <- multiDat$results$dat.all
+  }
   
-  var.names <-  rownames(multiDat$results$dat.all)
-  all.data <- data.frame(var.names, multiDat$results$dat.all, stringsAsFactors=FALSE)
+  var.names <-  rownames(dat)
+  all.data <- data.frame(var.names, dat, stringsAsFactors=FALSE)
   intercept_exclude <- !(all.data$var.names %in% c('intercept_cf1', 'intercept_cf2', 'intercept_cf3'))
   feature <- sapply(all.data$var.names, function(id){strsplit(id, '_')[[1]][1]}, USE.NAMES=FALSE)
   config <- as.factor(sapply(all.data$var.names, function(id){strsplit(id, '_')[[1]][2]}, USE.NAMES=FALSE))
@@ -30,10 +36,35 @@ CreatePlotDat <- function(multiDat)
   plot_dat
 }
 
+## clojure that bundles a baselined design matrix into a function that returns a logistic or linear regression
+## depending on the input
+PrepLinearModel <- function(X.baseline)
+{
+  MyLinearModel <- function(Y, X=X.baseline)
+  {
+    ##Y <- p.1_lm
+    ##X <- X.baseline
+    exclude <- is.na(Y)
+    Y <- Y[!exclude]
+    X <- X[!exclude, ] 
+    dat <- data.frame(Y, X)
+    if(sum(dat$Y < 0) == 0){ 
+      mod_logit <- glm(Y ~ ., data=dat, family=binomial(logit))
+      mod_logit
+    } else {
+      mod_lm <- lm(Y ~ ., data=dat)
+      mod_lm
+    }
+  }
+  MyLinearModel
+}
+
 ## log-likelihood closure, bundling the intercept & number of classes into a likelihood function
 ## for optim
 MultiNegLlk.ni <- function(Y, X, intercepts, n.classes)
-{  
+{
+  Y <- as.matrix(Y)
+  X <- as.matrix(X)  
   MyMultiNegLlk <- function(w)
   {
     # add an intercept term & intercept weights  
@@ -62,12 +93,12 @@ MyMultinomial.ni <- function(intercepts, parms, X, Y, var.names, hessian=TRUE, m
   cat('=== parameters are valid ===', '\n\n')
 
   ## create gradient closure with intercepts
-  MyMultiNegLlk <- MultiNegLlk.ni(intercepts, n.classes)
+  MyMultiNegLlk <- MultiNegLlk.ni(Y, X, intercepts, n.classes)
   
   ## model fitting
   cat('=== begin optimization ===', '\n\n')
   st <- proc.time()
-  model <- optim(parms, fn=MyMultiNegLlk, X=as.matrix(X), Y=as.matrix(Y), method="BFGS", hessian=TRUE, control=list(maxit=maxit));
+  model <- optim(parms, fn=MyMultiNegLlk, method="BFGS", hessian=TRUE, control=list(maxit=maxit));
   en <- proc.time()
   cat('Run time: ', en-st, '\n\n');
   
