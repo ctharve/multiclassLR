@@ -83,9 +83,41 @@ MultiNegLlk.ni <- function(Y, X, intercepts, n.classes)
   MyMultiNegLlk
 }
 
+## constrain parameters for cf1 & cf2 log-likelihood closure, bundling the intercept & number
+## of classes into a likelihood function for optim
+MultiNegLlk.ni.cf1cf2 <- function(Y, X, intercepts, n.classes)
+{
+  Y <- as.matrix(Y)
+  X <- as.matrix(X)  
+  MyMultiNegLlk <- function(w)
+  {
+    st <- proc.time()
+    # add an intercept term & intercept weights  
+    X.int <- cbind(rep(1, dim(X)[1]), X)
+    #w.int <- c(intercepts[1], w[1:37], intercepts[2], w[38:74], intercepts[3], w[75:111])
+    #parm.classes <- n.classes-1
+    ## remove the baseline class & combine cf1 & cf2
+    parm.classes <- n.classes-2
+    n.all.parms <- length(w)
+    #if((n.all.parms %% parm.classes) != 0){stop("parms vector length is not a multiple of n.classes-1")}
+    if((n.all.parms %% parm.classes) != 0){stop("parms vector length is not a multiple of n.classes-2")}
+    n.parms <- n.all.parms / parm.classes
+    w.cf1cf2 <- c(intercepts[1], w[1:n.parms])
+    w.int <- c(rep(w.cf1cf2, 2), intercepts[2], w[(n.parms+1):(2*n.parms)])
+    Y_hat <- YHatMulti(w.int, X.int)  
+    ## here just do the operations on the diagnoal
+    llk <- sum(diag(t(Y) %*% log(Y_hat)))  # trace is invariant to cyclic permutations
+    en <- proc.time()
+    cumtime <<- cumtime + (en-st);
+    #cat('cumtime: ', cumtime, '\n')
+    -llk
+  }
+  MyMultiNegLlk
+}
+
 ## optimization for a multinomial model. intercept fit from an independent
 ## run, avoiding the use of a baseline class
-MyMultinomial.ni <- function(intercepts, parms, X, Y, var.names, hessian=TRUE, maxit=1E5)
+MyMultinomial.ni <- function(intercepts, parms, X, Y, var.names, hessian=TRUE, maxit=1E5, cf1cf2=FALSE)
 {
   ## check argument validity ##
   ## TODO ##
@@ -93,22 +125,76 @@ MyMultinomial.ni <- function(intercepts, parms, X, Y, var.names, hessian=TRUE, m
   cat('=== parameters are valid ===', '\n\n')
 
   ## create gradient closure with intercepts
-  MyMultiNegLlk <- MultiNegLlk.ni(Y, X, intercepts, n.classes)
-  
+  if(cf1cf2==FALSE){
+    MyMultiNegLlk <- MultiNegLlk.ni(Y, X, intercepts, n.classes)
+  } else {
+    MyMultiNegLlk <- MultiNegLlk.ni.cf1cf2(Y, X, intercepts, n.classes)
+  }
+    
   ## model fitting
   cat('=== begin optimization ===', '\n\n')
   st <- proc.time()
+  cumtime <- st * 0
   model <- optim(parms, fn=MyMultiNegLlk, method="BFGS", hessian=TRUE, control=list(maxit=maxit));
   en <- proc.time()
   cat('Run time: ', en-st, '\n\n');
-  
+  cat('Fun time: ',cumtime, '\n');
   ## results: model fit and parameter estimates
   cat('=== processing ouput ===', '\n\n')
   nllk <- model$value 
   converged <- model$convergence
   hessian <- model$hessian
-  model_res <- MungeResults(model, var.names, classes=n.classes)
+  model_res <- MungeResults(model, var.names, classes=(n.classes-1))
 
   retval <- list(nllk=nllk, converged=converged, hessian=hessian, results=model_res)
   retval
 }
+
+#########################################################################################
+## adapt the multinomial function to handle intercepts on the constrained model,
+## combine cf1 & cf2
+#########################################################################################
+MyMultinomial <- function (parms, X, Y, var.names, hessian = TRUE, maxit = 1e+05, io.cf1cf2=FALSE) 
+{
+    cat("=== parameters are valid ===", "\n\n")
+    cat("=== begin optimization ===", "\n\n")
+
+    if(io.cf1cf2==FALSE){
+      MyLlk <- MultiNegLlk
+    } else {
+      MyLlk <- MultiNegLlk.io.cf1cf2
+    }
+    
+    st <- proc.time()
+    model <- optim(parms,
+                   fn = MyLlk,
+                   X = as.matrix(X), 
+                   Y = as.matrix(Y),
+                   method = "BFGS",
+                   hessian = TRUE,
+                   control = list(maxit = maxit))
+    
+    en <- proc.time()
+
+    cat("Run time: ", en - st, "\n\n")
+    cat("=== processing ouput ===", "\n\n")
+    nllk <- model$value
+    converged <- model$convergence
+    hessian <- model$hessian
+    model_res <- MungeResults(model, var.names, classes = 4)
+    retval <- list(nllk = nllk, converged = converged, hessian = hessian, 
+        results = model_res)
+    retval
+}
+
+MultiNegLlk.io.cf1cf2 <- function (w, X, Y) 
+{  
+    w.io.cf1cf2 <- c(rep(w[1], 2), w[2])  
+    Y_hat <- YHatMulti(w.io.cf1cf2, X)
+    llk <- sum(diag(t(Y) %*% log(Y_hat)))
+    -llk
+}
+
+##         ##
+## THE END ##
+##         ##
